@@ -1,0 +1,39 @@
+name: check
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate HTML (Nu HTML Checker)
+        run: |
+          npm pack --silent vnu-jar@26.9.30
+          tar xzf vnu-jar-26.9.30.tgz
+          java -jar package/build/dist/vnu.jar index.html
+
+      - name: Check signatory lines
+        run: |
+          for marker in '<!-- signatories:start -->' '<!-- signatories:end -->'; do
+            if [ "$(grep -cF -- "$marker" index.html)" != 1 ]; then
+              echo "::error file=index.html::Expected exactly one '$marker' line."
+              exit 1
+            fi
+          done
+          awk '
+            /<!-- signatories:end -->/ { inside = 0 }
+            inside && !/^[[:space:]]*<li>[^<>]+( — <a href="https:\/\/[^"<>]+">[^<>]+<\/a>)?<\/li>[[:space:]]*$/ {
+              printf "::error file=index.html,line=%d::Signatory line does not match the format in CONTRIBUTING.md: %s\n", NR, $0
+              bad = 1
+            }
+            /<!-- signatories:start -->/ { inside = 1 }
+            END { exit bad }
+          ' index.html
